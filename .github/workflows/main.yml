@@ -1,35 +1,36 @@
-name: Build and Deploy to Azure Static Web Apps
+name: CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  build_and_deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    name: Build and Deploy Job
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: 'Checkout Code'
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - name: 'Log in to Azure'
+        uses: azure/login@v2
         with:
-          node-version: '18.x'
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Install dependencies
-        run: npm install
+      - name: 'Show Azure account info'
+        run: az account show
 
-      - name: Build project
-        run: npm run build
-
-      - name: Deploy to Azure Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_CREDENTIALS }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: "upload"
-          app_location: "/"
-          output_location: "build"
+      # ADD YOUR BUILD AND DEPLOY STEPS HERE
+      # For example: deploy Bicep files from the 'iac' folder
+      - name: 'Deploy Infrastructure'
+        if: github.event_name == 'push'
+        run: |
+          echo "This is where you would run 'az deployment group create ...' for your Bicep files."
+          echo "Deployment to resource group: ${{ secrets.AZURE_RESOURCE_GROUP }}"
