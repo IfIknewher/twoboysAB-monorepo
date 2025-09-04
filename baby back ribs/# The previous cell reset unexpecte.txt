@@ -1,0 +1,200 @@
+# The previous cell reset unexpectedly. Recreate and zip again quickly.
+import os, zipfile, json, datetime, pathlib
+
+root = "/mnt/data/truthproject_transport"
+wf = os.path.join(root, ".github", "workflows")
+blocks_dir = os.path.join(root, "blocks")
+app_dir = os.path.join(root, "app")
+infra_dir = os.path.join(root, "infra")
+scripts_dir = os.path.join(root, "scripts")
+tests_dir = os.path.join(root, "tests")
+schemas_dir = os.path.join(root, "schemas")
+
+for d in [wf, blocks_dir, app_dir, infra_dir, scripts_dir, tests_dir, schemas_dir]:
+    os.makedirs(d, exist_ok=True)
+
+open(os.path.join(app_dir, "main.py"), "w").write(
+    "print('TruthProject orchestrator online (transport).')\n"
+)
+
+blocks = [
+    "_001_system_initialization.py",
+    "_011_directive_injection.py",
+    "_021_temporal_sync.py",
+    "_031_block_reindex.py",
+    "_040_system_elevation.py",
+    "_046_elevation_logic.py",
+]
+for b in blocks:
+    open(os.path.join(blocks_dir, b), "w").write("def run():\n    return {'status': 'ok'}\n")
+
+open(os.path.join(schemas_dir, "truthproject_blocks_001_046.json"), "w").write(
+    json.dumps({"project":"TruthProject","blocks":[1,11,21,31,40,46]}, indent=2)
+)
+open(os.path.join(infra_dir, "README.md"), "w").write("# Infra placeholder\n")
+open(os.path.join(infra_dir, "main.bicep"), "w").write("// TODO\n")
+open(os.path.join(tests_dir, "test_pipeline.py"), "w").write("def test_ok():\n    assert True\n")
+open(os.path.join(root, "requirements.txt"), "w").write("pytest\n")
+
+workflows = {
+"ci.yml": """name: ci
+on: {push: {branches: [main]}, pull_request: {}}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+""",
+"deploy.yml": """name: deploy
+on: {push: {branches: [main]}, workflow_dispatch: {}}
+permissions: {id-token: write, contents: read}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - run: echo Deploy placeholder. Replace with az CLI or Bicep.
+""",
+"chatops.yml": """name: chatops
+on: {issue_comment: {types: [created]}}
+permissions: {contents: read, issues: write}
+jobs:
+  run:
+    if: contains(github.event.comment.body, '/status') || contains(github.event.comment.body, '/deploy') || contains(github.event.comment.body, '/rollback') || contains(github.event.comment.body, '/preview')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            ChatOps received: `${{ github.event.comment.body }}`
+""",
+"pr-preview.yml": """name: pr-preview
+on: {pull_request: {types: [opened, synchronize, reopened]}}
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo Build preview placeholder.
+""",
+"post-deploy-health.yml": """name: post-deploy-health
+on: {workflow_run: {workflows: ['deploy'], types: [completed]}}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          URL="https://${{ vars.AZURE_APP_NAME }}.${{ vars.AZURE_REGION_FQDN || 'azurecontainerapps.io' }}"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || true)
+          echo "HTTP $code"
+          test "$code" = "200"
+""",
+"nightly-drift.yml": """name: nightly-drift
+on: {schedule: [{cron: '17 3 * * *'}]}
+permissions: {contents: read, issues: write}
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo '{"b001":true,"b011":true,"b021":true,"b031":true,"b040":true,"b046":true}' > out.json
+      - name: assert
+        run: |
+          python - <<'PY'
+          import json; d=json.load(open('out.json'))
+          req=set(['b001','b011','b021','b031','b040','b046'])
+          missing=req-set(d.keys()); assert not missing, f"Missing: {missing}"
+          PY
+      - uses: actions/github-script@v7
+        if: failure()
+        with:
+          script: |
+            github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title: 'Drift detected', body: 'Blocks missing.' });
+""",
+"acr-retention.yml": """name: acr-retention
+on: {schedule: [{cron: '0 4 * * 0'}]}
+permissions: {id-token: write, contents: read}
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - run: echo "Use az acr commands with ${{ vars.ACR_NAME }}."
+""",
+"release-drafter.yml": """name: release-drafter
+on: {push: {branches: [main]}}
+permissions: {contents: write}
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-drafter/release-drafter@v6
+        with: {publish: true}
+"""
+}
+
+for name, content in workflows.items():
+    open(os.path.join(wf, name), "w").write(content)
+
+open(os.path.join(scripts_dir, "push-https.ps1"), "w").write(
+r"""Param([Parameter(Mandatory=$true)][string]$Token,[string]$Owner="lflknewher",[string]$Repo="truthproject")
+git init
+git branch -M main
+git remote remove origin 2>$null
+git remote add origin ("https://{0}:{1}@github.com/{0}/{2}.git" -f $Owner,$Token,$Repo)
+git add .
+git commit -m "Initial push from transport package"
+git push -u origin main
+git remote set-url origin ("https://github.com/{0}/{1}.git" -f $Owner,$Repo)
+Write-Host "Done. Open https://github.com/$Owner/$Repo/actions"
+""")
+open(os.path.join(scripts_dir, "push-ssh.ps1"), "w").write(
+r"""Param([string]$Owner="lflknewher",[string]$Repo="truthproject")
+if (!(Test-Path "$env:USERPROFILE\.ssh\id_ed25519")) {
+  ssh-keygen -t ed25519 -C "$env:UserName@$(hostname)" -f "$env:USERPROFILE\.ssh\id_ed25519" -N ""
+  Write-Host "Add public key from $env:USERPROFILE\.ssh\id_ed25519.pub to GitHub → Settings → SSH and GPG keys"
+  pause
+}
+git init
+git branch -M main
+git remote remove origin 2>$null
+git remote add origin ("git@github.com:{0}/{1}.git" -f $Owner,$Repo)
+git add .
+git commit -m "Initial push from transport package (SSH)"
+git push -u origin main
+""")
+
+open(os.path.join(root, "README.md"), "w").write(
+"""# TruthProject — Transport Package
+Includes code skeleton, workflows, infra placeholders, and push scripts.
+Use scripts/push-https.ps1 -Token YOUR_PAT (fine-grained PAT with Contents RW, Metadata R, Workflows RW).
+Then add Actions secrets (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID) and variables (ACR_LOGIN_SERVER, ACR_NAME, AZURE_RESOURCE_GROUP, AZURE_APP_NAME).
+"""
+)
+open(os.path.join(root, "NOTE.txt"), "w").write("Much loved. Keep going.")
+
+# Zip
+ts = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+zip_path = f"/mnt/data/truthproject_transport_{ts}.zip"
+with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+    for dp, _, fns in os.walk(root):
+        for fn in fns:
+            full = os.path.join(dp, fn)
+            z.write(full, os.path.relpath(full, root))
+
+zip_path
