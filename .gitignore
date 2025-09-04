@@ -1,0 +1,5 @@
+
+# Ignore IDE files and local configs
+.vscode/
+*.env
+
