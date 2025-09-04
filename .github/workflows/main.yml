@@ -1,0 +1,36 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout Code'
+        uses: actions/checkout@v4
+
+      - name: 'Log in to Azure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 'Show Azure account info'
+        run: az account show
+
+      # ADD YOUR BUILD AND DEPLOY STEPS HERE
+      # For example: deploy Bicep files from the 'iac' folder
+      - name: 'Deploy Infrastructure'
+        if: github.event_name == 'push'
+        run: |
+          echo "This is where you would run 'az deployment group create ...' for your Bicep files."
+          echo "Deployment to resource group: ${{ secrets.AZURE_RESOURCE_GROUP }}"
